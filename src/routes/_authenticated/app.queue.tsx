@@ -24,7 +24,7 @@ function Queue() {
     enabled: !!wsId,
     queryFn: async () => {
       let q = supabase.from("posts").select("*").eq("workspace_id", wsId!).order("scheduled_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
-      if (status !== "all") q = q.eq("status", status);
+      if (status !== "all") q = q.eq("status", status as Exclude<Status, "all">);
       const { data, error } = await q.limit(100);
       if (error) throw error;
       return data ?? [];
@@ -39,7 +39,7 @@ function Queue() {
   };
 
   const publishNow = async (id: string) => {
-    const { error } = await supabase.from("posts").update({ scheduled_at: new Date().toISOString(), status: "scheduled" }).eq("id", id);
+    const { error } = await supabase.from("posts").update({ scheduled_at: new Date().toISOString(), status: "scheduled" as const }).eq("id", id);
     if (error) toast.error(error.message);
     else { toast.success("Queued for immediate publish"); qc.invalidateQueries({ queryKey: ["posts"] }); }
   };
@@ -66,19 +66,21 @@ function Queue() {
           {data.map((p) => {
             const StatusIcon = p.status === "draft" ? FileText : p.status === "scheduled" ? Clock : p.status === "published" ? CheckCircle2 : AlertCircle;
             const variant: "default" | "success" | "danger" | "muted" = p.status === "published" ? "success" : p.status === "failed" ? "danger" : p.status === "draft" ? "muted" : "default";
+            const recurring = !!(p.recurrence && typeof p.recurrence === "object" && (p.recurrence as { pattern?: string }).pattern);
             return (
               <Card key={p.id} className="p-4 flex items-center gap-4">
                 <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary shrink-0"><StatusIcon className="h-5 w-5" /></div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-medium truncate">{p.title || p.body?.slice(0, 80) || "Untitled"}</p>
+                    <p className="font-medium truncate">{p.caption?.slice(0, 80) || "Untitled"}</p>
                     <Badge variant={variant}>{p.status}</Badge>
-                    {p.is_recurring && <Badge variant="muted">recurring</Badge>}
+                    {recurring && <Badge variant="muted">recurring</Badge>}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">{p.scheduled_at ? fmtDate(p.scheduled_at) : `Created ${fmtDate(p.created_at)}`}</p>
                 </div>
                 {canEdit && (
                   <div className="flex items-center gap-1">
+                    <Link to="/app/composer" search={{ id: p.id }} className="p-2 rounded-lg hover:bg-muted text-xs" title="Edit">Edit</Link>
                     {p.status === "draft" && <button onClick={() => publishNow(p.id)} className="p-2 rounded-lg hover:bg-muted" title="Publish now"><Play className="h-4 w-4" /></button>}
                     <button onClick={() => remove(p.id)} className="p-2 rounded-lg hover:bg-muted text-destructive" title="Delete"><Trash2 className="h-4 w-4" /></button>
                   </div>

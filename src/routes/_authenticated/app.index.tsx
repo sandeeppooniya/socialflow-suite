@@ -6,9 +6,7 @@ import { Card, Badge } from "@/components/app/ui";
 import { fmtDate, fmtRelative } from "@/lib/format";
 import { PenSquare, Calendar, Users2, BarChart3, CheckCircle2, Clock, AlertCircle, FileText } from "lucide-react";
 
-export const Route = createFileRoute("/_authenticated/app/")({
-  component: Dashboard,
-});
+export const Route = createFileRoute("/_authenticated/app/")({ component: Dashboard });
 
 function Dashboard() {
   const { currentWorkspace } = useWorkspace();
@@ -18,10 +16,11 @@ function Dashboard() {
     queryKey: ["dash-stats", wsId],
     enabled: !!wsId,
     queryFn: async () => {
-      const q = (status: string) => supabase.from("posts").select("id", { count: "exact", head: true }).eq("workspace_id", wsId!).eq("status", status);
+      const q = (status: "draft" | "scheduled" | "published" | "failed") =>
+        supabase.from("posts").select("id", { count: "exact", head: true }).eq("workspace_id", wsId!).eq("status", status);
       const [d, s, p, f, acc] = await Promise.all([
         q("draft"), q("scheduled"), q("published"), q("failed"),
-        supabase.from("social_accounts").select("id", { count: "exact", head: true }).eq("workspace_id", wsId!).eq("is_active", true),
+        supabase.from("social_accounts").select("id", { count: "exact", head: true }).eq("workspace_id", wsId!).eq("status", "active"),
       ]);
       return { draft: d.count ?? 0, scheduled: s.count ?? 0, published: p.count ?? 0, failed: f.count ?? 0, accounts: acc.count ?? 0 };
     },
@@ -31,7 +30,7 @@ function Dashboard() {
     queryKey: ["dash-upcoming", wsId],
     enabled: !!wsId,
     queryFn: async () => {
-      const { data } = await supabase.from("posts").select("id, title, body, status, scheduled_at").eq("workspace_id", wsId!).eq("status", "scheduled").order("scheduled_at", { ascending: true }).limit(5);
+      const { data } = await supabase.from("posts").select("id, caption, status, scheduled_at").eq("workspace_id", wsId!).eq("status", "scheduled").order("scheduled_at", { ascending: true }).limit(5);
       return data ?? [];
     },
   });
@@ -77,7 +76,7 @@ function Dashboard() {
               {upcoming.map((p) => (
                 <div key={p.id} className="py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-medium text-sm truncate">{p.title || p.body?.slice(0, 60) || "Untitled"}</p>
+                    <p className="font-medium text-sm truncate">{p.caption?.slice(0, 60) || "Untitled"}</p>
                     <p className="text-xs text-muted-foreground">{fmtDate(p.scheduled_at)}</p>
                   </div>
                   <Badge>{p.status}</Badge>
@@ -105,9 +104,18 @@ function Dashboard() {
       </div>
 
       <div className="grid md:grid-cols-3 gap-4">
-        <QuickLink to="/app/calendar" icon={Calendar} title="Calendar" desc="Plan your week" />
-        <QuickLink to="/app/accounts" icon={Users2} title="Connect accounts" desc={`${stats?.accounts ?? 0} connected`} />
-        <QuickLink to="/app/analytics" icon={BarChart3} title="Analytics" desc="See what's working" />
+        <Link to="/app/calendar" className="rounded-2xl border border-border bg-card p-5 hover:border-primary/40 hover:shadow-[var(--shadow-card)] transition group">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary group-hover:scale-105 transition"><Calendar className="h-5 w-5" /></div>
+          <p className="mt-3 font-semibold">Calendar</p><p className="text-xs text-muted-foreground">Plan your week</p>
+        </Link>
+        <Link to="/app/accounts" className="rounded-2xl border border-border bg-card p-5 hover:border-primary/40 hover:shadow-[var(--shadow-card)] transition group">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary group-hover:scale-105 transition"><Users2 className="h-5 w-5" /></div>
+          <p className="mt-3 font-semibold">Connect accounts</p><p className="text-xs text-muted-foreground">{stats?.accounts ?? 0} connected</p>
+        </Link>
+        <Link to="/app/analytics" className="rounded-2xl border border-border bg-card p-5 hover:border-primary/40 hover:shadow-[var(--shadow-card)] transition group">
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary group-hover:scale-105 transition"><BarChart3 className="h-5 w-5" /></div>
+          <p className="mt-3 font-semibold">Analytics</p><p className="text-xs text-muted-foreground">See what's working</p>
+        </Link>
       </div>
     </div>
   );
@@ -121,15 +129,5 @@ function StatCard({ icon: Icon, label, value, tone }: { icon: React.ComponentTyp
       <p className="mt-3 text-2xl font-semibold">{value}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
     </Card>
-  );
-}
-
-function QuickLink({ to, icon: Icon, title, desc }: { to: string; icon: React.ComponentType<{ className?: string }>; title: string; desc: string }) {
-  return (
-    <Link to={to as "/app"} className="rounded-2xl border border-border bg-card p-5 hover:border-primary/40 hover:shadow-[var(--shadow-card)] transition group">
-      <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary group-hover:scale-105 transition"><Icon className="h-5 w-5" /></div>
-      <p className="mt-3 font-semibold">{title}</p>
-      <p className="text-xs text-muted-foreground">{desc}</p>
-    </Link>
   );
 }

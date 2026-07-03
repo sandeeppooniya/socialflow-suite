@@ -6,19 +6,35 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { Card } from "@/components/app/ui";
 import { BarChart3 } from "lucide-react";
 
+type Row = { id: string; status: string; published_at: string | null; created_at: string };
+
 export const Route = createFileRoute("/_authenticated/app/analytics")({ component: Analytics });
 
 function Analytics() {
   const { currentWorkspace } = useWorkspace();
   const wsId = currentWorkspace?.id;
 
-  const { data = [] } = useQuery({
+  const { data = [] } = useQuery<Row[]>({
     queryKey: ["analytics-posts", wsId],
     enabled: !!wsId,
     queryFn: async () => {
       const since = new Date(); since.setDate(since.getDate() - 30);
-      const { data } = await supabase.from("posts").select("id, status, platform, published_at, created_at").eq("workspace_id", wsId!).gte("created_at", since.toISOString()).limit(500);
-      return data ?? [];
+      const { data } = await supabase.from("posts").select("id, status, published_at, created_at").eq("workspace_id", wsId!).gte("created_at", since.toISOString()).limit(500);
+      return (data ?? []) as Row[];
+    },
+  });
+
+  const { data: targets = [] } = useQuery<{ social_account_id: string; social_accounts: { platform: string } | null }[]>({
+    queryKey: ["analytics-targets", wsId],
+    enabled: !!wsId,
+    queryFn: async () => {
+      const since = new Date(); since.setDate(since.getDate() - 30);
+      const { data } = await supabase
+        .from("post_targets")
+        .select("social_account_id, social_accounts!inner(platform, workspace_id)")
+        .gte("created_at", since.toISOString());
+      // filter to this workspace via inner join relation
+      return (data ?? []).filter((t) => (t.social_accounts as unknown as { workspace_id: string })?.workspace_id === wsId) as never;
     },
   });
 
@@ -28,7 +44,7 @@ function Analytics() {
     const scheduled = data.filter((p) => p.status === "scheduled").length;
     const failed = data.filter((p) => p.status === "failed").length;
     const byPlat: Record<string, number> = {};
-    data.forEach((p) => { if (p.platform) byPlat[p.platform] = (byPlat[p.platform] ?? 0) + 1; });
+    targets.forEach((t) => { const pl = t.social_accounts?.platform; if (pl) byPlat[pl] = (byPlat[pl] ?? 0) + 1; });
     const days = new Array(30).fill(0);
     data.forEach((p) => {
       const d = p.published_at || p.created_at;
@@ -38,7 +54,7 @@ function Analytics() {
     });
     const max = Math.max(...days, 1);
     return { total, published, scheduled, failed, byPlat, days, max };
-  }, [data]);
+  }, [data, targets]);
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -68,15 +84,18 @@ function Analytics() {
       <Card>
         <h3 className="font-semibold mb-4">By platform</h3>
         {Object.keys(summary.byPlat).length === 0 ? (
-          <p className="text-sm text-muted-foreground">No posts yet.</p>
+          <p className="text-sm text-muted-foreground">No published targets yet.</p>
         ) : (
           <div className="space-y-3">
-            {Object.entries(summary.byPlat).sort((a, b) => b[1] - a[1]).map(([plat, count]) => (
-              <div key={plat}>
-                <div className="flex items-center justify-between text-sm mb-1"><span className="capitalize font-medium">{plat}</span><span className="text-muted-foreground">{count}</span></div>
-                <div className="h-2 rounded-full bg-muted overflow-hidden"><div className="h-full bg-primary" style={{ width: `${(count / summary.total) * 100}%` }} /></div>
-              </div>
-            ))}
+            {Object.entries(summary.byPlat).sort((a, b) => b[1] - a[1]).map(([plat, count]) => {
+              const totalT = Object.values(summary.byPlat).reduce((a, b) => a + b, 0);
+              return (
+                <div key={plat}>
+                  <div className="flex items-center justify-between text-sm mb-1"><span className="capitalize font-medium">{plat}</span><span className="text-muted-foreground">{count}</span></div>
+                  <div className="h-2 rounded-full bg-muted overflow-hidden"><div className="h-full bg-primary" style={{ width: `${(count / totalT) * 100}%` }} /></div>
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>

@@ -10,11 +10,13 @@ import { useState } from "react";
 const PLATFORMS = [
   { key: "instagram", label: "Instagram", icon: Instagram },
   { key: "facebook", label: "Facebook", icon: Facebook },
-  { key: "twitter", label: "X / Twitter", icon: Twitter },
+  { key: "x", label: "X / Twitter", icon: Twitter },
   { key: "linkedin", label: "LinkedIn", icon: Linkedin },
   { key: "youtube", label: "YouTube", icon: Youtube },
   { key: "tiktok", label: "TikTok", icon: Users2 },
 ] as const;
+
+type Platform = typeof PLATFORMS[number]["key"];
 
 export const Route = createFileRoute("/_authenticated/app/accounts")({ component: Accounts });
 
@@ -22,8 +24,8 @@ function Accounts() {
   const { currentWorkspace, canEdit } = useWorkspace();
   const wsId = currentWorkspace?.id;
   const qc = useQueryClient();
-  const [adding, setAdding] = useState<null | typeof PLATFORMS[number]["key"]>(null);
-  const [name, setName] = useState("");
+  const [adding, setAdding] = useState<Platform | null>(null);
+  const [handle, setHandle] = useState("");
 
   const { data = [] } = useQuery({
     queryKey: ["accounts-all", wsId],
@@ -39,13 +41,11 @@ function Accounts() {
     if (!wsId || !adding) return;
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase.from("social_accounts").insert({
-      workspace_id: wsId, platform: adding, account_name: name, connected_by: user!.id, is_active: true,
-      // real OAuth tokens will be attached via Instagram OAuth flow for that platform
-      access_token: null, refresh_token: null,
+      workspace_id: wsId, platform: adding as Platform, handle, connected_by: user!.id, status: "active" as const,
     });
     if (error) { toast.error(error.message); return; }
-    toast.success(adding === "instagram" ? "Placeholder created. Complete Instagram OAuth from settings." : "Mock account added");
-    setName(""); setAdding(null);
+    toast.success(adding === "instagram" ? "Placeholder created. Complete Instagram OAuth to enable live publishing." : "Mock account added");
+    setHandle(""); setAdding(null);
     qc.invalidateQueries({ queryKey: ["accounts-all", wsId] });
   };
 
@@ -74,8 +74,8 @@ function Accounts() {
           </div>
           {adding && (
             <form onSubmit={addAccount} className="mt-4 pt-4 border-t border-border flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-muted-foreground">Account handle for <b className="capitalize">{adding}</b>:</span>
-              <input autoFocus required value={name} onChange={(e) => setName(e.target.value)} placeholder="@handle" className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus:border-ring flex-1 min-w-[200px]" />
+              <span className="text-sm text-muted-foreground">Handle for <b className="capitalize">{adding}</b>:</span>
+              <input autoFocus required value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="@handle" className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm outline-none focus:border-ring flex-1 min-w-[200px]" />
               <button type="submit" className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm font-medium flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
               <button type="button" onClick={() => setAdding(null)} className="rounded-lg px-3 py-1.5 text-sm hover:bg-muted">Cancel</button>
             </form>
@@ -94,8 +94,8 @@ function Accounts() {
                 <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary-soft text-primary"><P.icon className="h-5 w-5" /></div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="font-medium">{a.account_name}</p>
-                    <Badge variant={a.is_active ? "success" : "muted"}>{a.is_active ? "Active" : "Paused"}</Badge>
+                    <p className="font-medium">@{a.handle}</p>
+                    <Badge variant={a.status === "active" ? "success" : "muted"}>{a.status}</Badge>
                     {a.platform !== "instagram" && <Badge variant="warning">mocked</Badge>}
                   </div>
                   <p className="text-xs text-muted-foreground capitalize">{a.platform}</p>

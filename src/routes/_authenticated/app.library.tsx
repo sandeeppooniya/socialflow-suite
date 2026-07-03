@@ -27,12 +27,12 @@ function Library() {
   });
 
   useEffect(() => {
+    if (!data.length) return;
     (async () => {
+      const paths = data.map((a) => a.storage_path);
+      const { data: signed } = await supabase.storage.from("media").createSignedUrls(paths, 3600);
       const map: Record<string, string> = {};
-      for (const a of data) {
-        const { data: signed } = await supabase.storage.from("media").createSignedUrl(a.storage_path, 3600);
-        if (signed?.signedUrl) map[a.id] = signed.signedUrl;
-      }
+      signed?.forEach((s, i) => { if (s.signedUrl) map[data[i].id] = s.signedUrl; });
       setUrls(map);
     })();
   }, [data]);
@@ -43,7 +43,7 @@ function Library() {
       const path = `${wsId}/${crypto.randomUUID()}-${file.name}`;
       const { error: upErr } = await supabase.storage.from("media").upload(path, file);
       if (upErr) { toast.error(upErr.message); continue; }
-      await supabase.from("media_assets").insert({ workspace_id: wsId, storage_path: path, mime_type: file.type, size_bytes: file.size, filename: file.name });
+      await supabase.from("media_assets").insert({ workspace_id: wsId, storage_path: path, mime: file.type, size_bytes: file.size });
     }
     toast.success("Uploaded");
     qc.invalidateQueries({ queryKey: ["library", wsId] });
@@ -55,6 +55,8 @@ function Library() {
     await supabase.from("media_assets").delete().eq("id", id);
     qc.invalidateQueries({ queryKey: ["library", wsId] });
   };
+
+  const filename = (path: string) => path.split("/").pop() || path;
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -77,13 +79,13 @@ function Library() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {data.map((a) => (
             <div key={a.id} className="group relative rounded-2xl overflow-hidden border border-border bg-card aspect-square">
-              {urls[a.id] && a.mime_type?.startsWith("image/") ? (
-                <img src={urls[a.id]} alt={a.filename || ""} className="w-full h-full object-cover" />
+              {urls[a.id] && a.mime?.startsWith("image/") ? (
+                <img src={urls[a.id]} alt="" className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full grid place-items-center bg-muted text-muted-foreground text-xs p-2 text-center">{a.filename}</div>
+                <div className="w-full h-full grid place-items-center bg-muted text-muted-foreground text-xs p-2 text-center break-all">{filename(a.storage_path)}</div>
               )}
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex flex-col justify-end p-2">
-                <p className="text-white text-[11px] truncate">{a.filename}</p>
+                <p className="text-white text-[11px] truncate">{filename(a.storage_path)}</p>
                 <p className="text-white/70 text-[10px]">{fmtDate(a.created_at, "P")}</p>
                 {canEdit && <button onClick={() => remove(a.id, a.storage_path)} className="absolute top-2 right-2 p-1 rounded-md bg-black/50 text-white"><Trash2 className="h-3 w-3" /></button>}
               </div>

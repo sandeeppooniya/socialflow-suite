@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,22 +18,18 @@ function Admin() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<"members" | "activity" | "posts">("members");
 
-  if (!isAdmin) {
-    return <Card><EmptyState icon={Shield} title="Admin only" description="You need admin access to view this page." /></Card>;
-  }
-
   const { data: members = [] } = useQuery({
     queryKey: ["members", wsId],
-    enabled: !!wsId,
+    enabled: !!wsId && isAdmin,
     queryFn: async () => {
-      const { data } = await supabase.from("workspace_members").select("*, profiles!workspace_members_user_id_fkey(id, full_name, avatar_url)").eq("workspace_id", wsId!);
+      const { data } = await supabase.from("workspace_members").select("id, role, created_at, user_id, profiles!workspace_members_user_id_fkey(id, full_name, avatar_url)").eq("workspace_id", wsId!);
       return data ?? [];
     },
   });
 
   const { data: activity = [] } = useQuery({
     queryKey: ["admin-activity", wsId],
-    enabled: !!wsId && tab === "activity",
+    enabled: !!wsId && isAdmin && tab === "activity",
     queryFn: async () => {
       const { data } = await supabase.from("activity_logs").select("*").eq("workspace_id", wsId!).order("created_at", { ascending: false }).limit(100);
       return data ?? [];
@@ -42,12 +38,16 @@ function Admin() {
 
   const { data: allPosts = [] } = useQuery({
     queryKey: ["admin-posts", wsId],
-    enabled: !!wsId && tab === "posts",
+    enabled: !!wsId && isAdmin && tab === "posts",
     queryFn: async () => {
-      const { data } = await supabase.from("posts").select("id, title, body, status, scheduled_at, created_by").eq("workspace_id", wsId!).order("created_at", { ascending: false }).limit(100);
+      const { data } = await supabase.from("posts").select("id, caption, status, scheduled_at").eq("workspace_id", wsId!).order("created_at", { ascending: false }).limit(100);
       return data ?? [];
     },
   });
+
+  if (!isAdmin) {
+    return <div className="max-w-5xl"><Card><EmptyState icon={Shield} title="Admin only" description="You need admin access to view this page." /></Card></div>;
+  }
 
   const changeRole = async (id: string, role: typeof ROLES[number]) => {
     const { error } = await supabase.from("workspace_members").update({ role }).eq("id", id);
@@ -77,13 +77,11 @@ function Admin() {
         <div className="space-y-3">
           <Card className="p-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <UserPlus className="h-4 w-4" />
-              To invite a user, share your workspace link — they can sign up and you'll add them here once they appear.
+              <UserPlus className="h-4 w-4" /> Invite users by sharing your workspace link; they'll appear here after signing up.
             </div>
           </Card>
           {members.map((m) => {
-            type P = { full_name?: string | null; avatar_url?: string | null } | null;
-            const p = (m as unknown as { profiles: P }).profiles;
+            const p = (m as unknown as { profiles: { full_name?: string | null } | null }).profiles;
             return (
               <Card key={m.id} className="p-4 flex items-center gap-3">
                 <div className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
@@ -125,7 +123,7 @@ function Admin() {
           {allPosts.length === 0 ? <Card><EmptyState icon={Shield} title="No posts yet" /></Card> : allPosts.map((p) => (
             <Card key={p.id} className="p-3 flex items-center gap-3">
               <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{p.title || p.body?.slice(0, 60) || "Untitled"}</p>
+                <p className="font-medium truncate">{p.caption?.slice(0, 60) || "Untitled"}</p>
                 <p className="text-xs text-muted-foreground">{p.scheduled_at ? fmtRelative(p.scheduled_at) : "no schedule"}</p>
               </div>
               <Badge>{p.status}</Badge>

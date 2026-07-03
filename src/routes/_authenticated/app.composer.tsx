@@ -12,19 +12,17 @@ export const Route = createFileRoute("/_authenticated/app/composer")({
   component: Composer,
 });
 
-const PLATFORMS = ["instagram", "facebook", "twitter", "linkedin", "youtube", "tiktok"] as const;
-
 function Composer() {
   const { currentWorkspace, canEdit } = useWorkspace();
   const wsId = currentWorkspace?.id;
   const navigate = useNavigate();
   const search = Route.useSearch();
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+  const [caption, setCaption] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [recurring, setRecurring] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [targets, setTargets] = useState<string[]>([]);
-  const [media, setMedia] = useState<{ id: string; url: string }[]>([]);
+  const [mediaIds, setMediaIds] = useState<string[]>([]);
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [postId, setPostId] = useState<string | undefined>(search.id);
 
@@ -32,7 +30,7 @@ function Composer() {
     queryKey: ["accounts", wsId],
     enabled: !!wsId,
     queryFn: async () => {
-      const { data } = await supabase.from("social_accounts").select("*").eq("workspace_id", wsId!).eq("is_active", true);
+      const { data } = await supabase.from("social_accounts").select("*").eq("workspace_id", wsId!).eq("status", "active");
       return data ?? [];
     },
   });
@@ -40,13 +38,16 @@ function Composer() {
   useEffect(() => {
     if (!postId || !wsId) return;
     (async () => {
-      const { data } = await supabase.from("posts").select("*, post_targets(social_account_id), media_assets:media_assets!posts_media_asset_id_fkey(*)").eq("id", postId).maybeSingle();
+      const { data } = await supabase.from("posts").select("*").eq("id", postId).maybeSingle();
       if (data) {
-        setTitle(data.title || "");
-        setBody(data.body || "");
+        setCaption(data.caption || "");
         setScheduledAt(data.scheduled_at ? new Date(data.scheduled_at).toISOString().slice(0, 16) : "");
-        setRecurring((data.recurrence_pattern as typeof recurring) || "none");
+        const rec = (data.recurrence as { pattern?: string } | null)?.pattern;
+        if (rec === "daily" || rec === "weekly" || rec === "monthly") setRecurring(rec);
+        setMediaIds(data.media_ids || []);
       }
+      const { data: t } = await supabase.from("post_targets").select("social_account_id").eq("post_id", postId);
+      if (t) setTargets(t.map((x) => x.social_account_id));
     })();
   }, [postId, wsId]);
 
@@ -57,10 +58,11 @@ function Composer() {
     if (upErr) { toast.error(upErr.message); return; }
     const { data: signed } = await supabase.storage.from("media").createSignedUrl(path, 3600);
     const { data: asset, error } = await supabase.from("media_assets").insert({
-      workspace_id: wsId, storage_path: path, mime_type: file.type, size_bytes: file.size, filename: file.name,
+      workspace_id: wsId, storage_path: path, mime: file.type, size_bytes: file.size,
     }).select().single();
     if (error) { toast.error(error.message); return; }
-    setMedia((m) => [...m, { id: asset.id, url: signed?.signedUrl || "" }]);
+    setMediaIds((m) => [...m, asset.id]);
+    if (signed?.signedUrl) setMediaUrls((u) => ({ ...u, [asset.id]: signed.signedUrl }));
   };
 
   const save = async (status: "draft" | "scheduled") => {
@@ -71,14 +73,12 @@ function Composer() {
     const { data: { user } } = await supabase.auth.getUser();
     const payload = {
       workspace_id: wsId,
-      created_by: user!.id,
-      title: title || null,
-      body,
+      author_id: user!.id,
+      caption,
       status,
       scheduled_at: status === "scheduled" ? new Date(scheduledAt).toISOString() : null,
-      is_recurring: recurring !== "none",
-      recurrence_pattern: recurring === "none" ? null : recurring,
-      media_asset_id: media[0]?.id || null,
+      recurrence: recurring === "none" ? null : { pattern: recurring },
+      media_ids: mediaIds,
     };
     let id = postId;
     if (id) {
@@ -90,11 +90,10 @@ function Composer() {
       id = data.id;
       setPostId(id);
     }
-    // upsert targets
     if (id) {
       await supabase.from("post_targets").delete().eq("post_id", id);
       if (targets.length) {
-        await supabase.from("post_targets").insert(targets.map((accId) => ({ post_id: id!, social_account_id: accId })));
+        await supabase.from("post_targets").insert(targets.map((accId) => ({ post_id: id!, social_account_id: accId, status: "draft" as const })));
       }
     }
     toast.success(status === "scheduled" ? "Scheduled" : "Draft saved");
@@ -107,25 +106,23 @@ function Composer() {
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold tracking-tight">Composer</h1>
         <Card>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title (optional)" className="w-full bg-transparent outline-none text-lg font-medium mb-3" />
-          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={10} placeholder="What do you want to share?" className="w-full bg-transparent outline-none resize-none text-sm leading-relaxed" />
-          {media.length > 0 && (
+          <textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={10} placeholder="What do you want to share?" className="w-full bg-transparent outline-none resize-none text-sm leading-relaxed" />
+          {mediaIds.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
-              {media.map((m) => (
-                <div key={m.id} className="relative h-20 w-20 rounded-lg overflow-hidden border border-border">
-                  {m.url ? <img src={m.url} alt="" className="h-full w-full object-cover" /> : <div className="h-full w-full grid place-items-center bg-muted"><ImageIcon className="h-5 w-5 text-muted-foreground" /></div>}
-                  <button onClick={() => setMedia((x) => x.filter((y) => y.id !== m.id))} className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/60 text-white"><X className="h-3 w-3" /></button>
+              {mediaIds.map((id) => (
+                <div key={id} className="relative h-20 w-20 rounded-lg overflow-hidden border border-border">
+                  {mediaUrls[id] ? <img src={mediaUrls[id]} alt="" className="h-full w-full object-cover" /> : <div className="h-full w-full grid place-items-center bg-muted"><ImageIcon className="h-5 w-5 text-muted-foreground" /></div>}
+                  <button onClick={() => setMediaIds((x) => x.filter((y) => y !== id))} className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/60 text-white"><X className="h-3 w-3" /></button>
                 </div>
               ))}
             </div>
           )}
           <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
             <label className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground cursor-pointer">
-              <ImageIcon className="h-4 w-4" />
-              <span>Add media</span>
+              <ImageIcon className="h-4 w-4" /><span>Add media</span>
               <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
             </label>
-            <p className="text-xs text-muted-foreground">{body.length} chars</p>
+            <p className="text-xs text-muted-foreground">{caption.length} chars</p>
           </div>
         </Card>
       </div>
@@ -141,12 +138,11 @@ function Composer() {
                 <label key={a.id} className="flex items-center gap-2 text-sm cursor-pointer">
                   <input type="checkbox" checked={targets.includes(a.id)} onChange={(e) => setTargets((t) => e.target.checked ? [...t, a.id] : t.filter((x) => x !== a.id))} className="accent-primary" />
                   <span className="capitalize font-medium">{a.platform}</span>
-                  <span className="text-muted-foreground truncate">{a.account_name}</span>
+                  <span className="text-muted-foreground truncate">@{a.handle}</span>
                 </label>
               ))}
             </div>
           )}
-          <p className="mt-3 text-[11px] text-muted-foreground">Supports: {PLATFORMS.join(", ")}</p>
         </Card>
 
         <Card>
