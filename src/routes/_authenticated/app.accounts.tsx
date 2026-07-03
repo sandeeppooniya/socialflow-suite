@@ -12,7 +12,6 @@ const PLATFORMS = [
   { key: "facebook", label: "Facebook", icon: Facebook },
   { key: "x", label: "X / Twitter", icon: Twitter },
   { key: "linkedin", label: "LinkedIn", icon: Linkedin },
-  { key: "youtube", label: "YouTube", icon: Youtube },
   { key: "tiktok", label: "TikTok", icon: Users2 },
 ] as const;
 
