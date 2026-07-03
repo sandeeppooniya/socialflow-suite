@@ -52,13 +52,13 @@ export function Navbar() {
 
         <div className="flex items-center gap-2">
           <a
-            href="#"
+            href="/auth"
             className="hidden rounded-full px-4 py-2 text-sm font-medium text-foreground/80 transition hover:text-primary sm:inline-block"
           >
             Log In
           </a>
           <a
-            href="#"
+            href="/auth?mode=signup"
             className="rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-soft)] transition hover:bg-primary-glow"
           >
             Sign Up Free
