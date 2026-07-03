@@ -18,7 +18,8 @@ import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/format";
 import { useWorkspace } from "@/lib/workspace-context";
 
-const nav = [
+type NavItem = { to: string; label: string; icon: React.ComponentType<{ className?: string }>; exact?: boolean };
+const nav: NavItem[] = [
   { to: "/app", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/app/composer", label: "Composer", icon: PenSquare },
   { to: "/app/calendar", label: "Calendar", icon: Calendar },
@@ -27,9 +28,9 @@ const nav = [
   { to: "/app/accounts", label: "Social Accounts", icon: Users2 },
   { to: "/app/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/app/notifications", label: "Notifications", icon: Bell },
-] as const;
+];
 
-const adminNav = [
+const adminNav: NavItem[] = [
   { to: "/app/admin", label: "Workspace Admin", icon: Shield },
   { to: "/app/settings", label: "Settings", icon: Settings },
 ] as const;
