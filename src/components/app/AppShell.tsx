@@ -33,7 +33,7 @@ const nav: NavItem[] = [
 const adminNav: NavItem[] = [
   { to: "/app/admin", label: "Workspace Admin", icon: Shield },
   { to: "/app/settings", label: "Settings", icon: Settings },
-] as const;
+];
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { isAdmin } = useWorkspace();
